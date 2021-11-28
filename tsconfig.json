@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    //es模块对default处理
+    "esModuleInterop": true,
+    //严格模式
+    "alwaysStrict": true,
+    //实验性装饰器
+    "experimentalDecorators": true,
+    //报错不生成文件
+    "noEmitOnError": true,
+    //允许UMD在全局访问
+    "allowUmdGlobalAccess": true,
+    //生成d.ts文件
+    "declaration": true,
+    //生成d.ts文件路径
+    "declarationDir": "./types",
+    //编译模块类型
+    "module": "esnext",
+    //使用模块的解析模式
+    "moduleResolution": "node",
+    //目标版本
+    "target": "es5",
+    //忽略.d.ts
+    "skipLibCheck": true,
+    "sourceMap": false,
+    "lib": [
+      "esnext",
+      "dom"
+    ]
+  }
+}
