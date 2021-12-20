@@ -1,6 +1,6 @@
 {
   "name": "blue-retreat",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "vue keep-alive popstate manage",
   "main": "./index.js",
   "types": "./types/index.d.ts",
@@ -9,7 +9,7 @@
     "build": "node  blue-build-library/build.js"
   },
   "keyword": [
-    "vue keep-alive",
+    "vue keep-alive helper",
     "vue program popstate manage"
   ],
   "author": "Blue",
@@ -37,8 +37,5 @@
   "bugs": {
     "mail": "azhanging@qq.com",
     "web": "https://github.com/azhanging/blue-retreat"
-  },
-  "dependencies": {
-    "blue-utils": "^1.2.2"
   }
 }

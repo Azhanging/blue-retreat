@@ -1,12 +1,8 @@
-import utils from "blue-utils";
-
-interface TBlueRetreatOptions {
-  router: any;
-  store: any;
-}
+import { getCurrentRetreatData } from "./retreat-data";
+export * from "./retreat-data";
 
 //历史类型
-interface THistory {
+interface TRouterHistory {
   //state.key
   key: string;
   //组件的name
@@ -15,15 +11,48 @@ interface THistory {
   time: number;
 }
 
-let context: BlueRetreat = null;
-
+//mutation 方法名
 const SET_KEEP_ALIVE_EXCLUDE: string = `SET_KEEP_ALIVE_EXCLUDE`;
 
+//vuex模块名
 const STORE_MODULE_KEY: string = `KEEP_ALIVE`;
+
+//路由的历史记录
+let routerHistory: TRouterHistory[] = [];
+
+//当前的popState的name值
+let currentPopStateName: string = null;
+
+//配置vue相关的router以及store
+let store: any = null;
+let router: any = null;
+
+//初始化
+export const initBlueRetreat = (() => {
+  let initStatus = false;
+  return (opts: { router: any; store: any }) => {
+    if (initStatus) return;
+    let { router: _router, store: _store } = opts;
+    if (!(_router && _store)) {
+      return console.log(
+        `blue-retreat init error,please required set Vue Router and Vuex in options`
+      );
+    }
+    //设置相关配置信息
+    router = _router;
+    store = _store;
+    //动态注册store
+    storeRegisterModule();
+    //设置afterEach
+    setRouterHooks();
+    //设置初始化状态
+    initStatus = true;
+  };
+})();
 
 //把keep alive exclude状态处理在store module
 function storeRegisterModule() {
-  this.store.registerModule(STORE_MODULE_KEY, {
+  store.registerModule(STORE_MODULE_KEY, {
     state: {
       exclude: [],
     },
@@ -37,10 +66,9 @@ function storeRegisterModule() {
 
 //设置路由钩子状态
 function setRouterHooks() {
-  const { router } = this;
   //路由进前处理
   router.beforeEach((to: any, from: any, next: any) => {
-    beforePushHistory.call(this, {
+    beforePushHistory({
       to,
       from,
       next,
@@ -50,94 +78,101 @@ function setRouterHooks() {
   router.afterEach(() => {
     setTimeout(() => {
       //写入history
-      pushHistory.call(this);
+      pushHistory();
     });
   });
 }
 
 //注册处理popState事件处理
-function popStateEvent(): Function {
+function popStateEvent() {
   const popStateHandler = (event) => {
-    if (!context) return;
-    const { history } = context;
+    if (!event.state) {
+      event.state = {};
+    }
+    event.state.retreatData = getCurrentRetreatData();
     const { key }: { key: string } = event.state;
-    const nextHistory = queryHistoryByKey.call(context, {
+    let nextRouterHistory = queryHistoryByKey({
       key,
       type: `next`,
     });
-    const currentHistory: THistory | null = queryHistoryByKey.call(context, {
+    const currentRouterHistory = queryHistoryByKey({
       key,
     });
     //记录popstate的name,这里可能是被销毁过的history
-    context.currentPopStateName = currentHistory ? currentHistory.name : null;
+    currentPopStateName = currentRouterHistory
+      ? (currentRouterHistory as TRouterHistory).name
+      : null;
+    //如果是那种回环访问，当前的页面是后退回来产生的新页面
+    //这种在routerHistory是不存在的，这里需要移除最后一个路由缓存
+    if (currentRouterHistory === null && routerHistory.length > 0) {
+      nextRouterHistory = routerHistory[routerHistory.length - 1];
+    }
     //如果当前页的下一个页面（后退回来的页面）在history中有记录，这里清空缓存
-    if (nextHistory && history.indexOf(nextHistory.key)) {
-      const { name, key } = nextHistory;
+    if (nextRouterHistory) {
+      const { name, key } = nextRouterHistory as TRouterHistory;
       //获取store中的exclude state
-      const exclude = context.getExcludeState();
+      const exclude = getExcludeState();
       if (exclude.includes(name)) return;
       exclude.push(name);
       //设置store
-      setKeepAliveExclude.call(context, exclude);
+      setKeepAliveExclude(exclude);
       setTimeout(() => {
-        const exclude = context.getExcludeState();
+        const exclude = getExcludeState();
         const index = exclude.indexOf(name);
         if (index !== -1) {
           exclude.splice(index, 1);
         }
         //设置store
-        setKeepAliveExclude.call(context, exclude);
+        setKeepAliveExclude(exclude);
         //再历史中的index
-        const historyIndex = queryHistoryByKey.call(context, {
+        const historyIndex = queryHistoryByKey({
           key,
           findIndex: true,
         });
         //这里删除排序
         if (historyIndex !== -1) {
-          history.splice(historyIndex, 1);
+          routerHistory.splice(historyIndex as number, 1);
         }
       }, 50);
     }
   };
-
-  const event = `popstate`;
-  window.addEventListener(event, popStateHandler);
-  return () => {
-    window.removeEventListener(event, popStateHandler);
-  };
+  window.addEventListener(`popstate`, popStateHandler);
 }
 
+//注册popstate事件处理
+popStateEvent();
+
 //进入路由前处理
-function beforePushHistory(this: BlueRetreat, opts) {
+function beforePushHistory(opts) {
   const { to, from, next } = opts;
   const { meta } = to;
   const { name }: { name: string } = meta;
   //如果当前是通过popstate触发的，不进行缓存的处理
-  if (name === this.currentPopStateName) return next();
-  this.currentPopStateName = null;
+  if (name === currentPopStateName) return next();
+  currentPopStateName = null;
   //找一下之前历史是否存在相同的缓存（回环访问的那种情况）
-  const findHistory: THistory[] = queryHistoryByName.call(this, { name });
+  const findHistory: TRouterHistory[] = queryHistoryByName({ name });
   //如果之前存在缓存了，先杀掉之前的缓存
   if (findHistory.length === 0) return next();
   //获取store中的exclude state
-  const exclude = this.getExcludeState();
+  const exclude = getExcludeState();
   if (!exclude.includes(name)) {
     //写入排除缓存name
     exclude.push(name);
     //设置store
-    setKeepAliveExclude.call(this, exclude);
+    setKeepAliveExclude(exclude);
     //下一跳移除对应的规则
     setTimeout(() => {
       //获取store中的exclude state
-      const exclude = this.getExcludeState();
+      const exclude = getExcludeState();
       const index = exclude.indexOf(name);
       if (index !== -1) {
         exclude.splice(index, 1);
       }
       //设置store
-      setKeepAliveExclude.call(this, exclude);
+      setKeepAliveExclude(exclude);
       //删除历史记录
-      removeHistoryByName.call(this, { name });
+      removeHistoryByName({ name });
       //完成处理
       next();
     });
@@ -149,21 +184,21 @@ function beforePushHistory(this: BlueRetreat, opts) {
 
 //设置store
 function setKeepAliveExclude(exclude: string[]) {
-  this.store.commit(SET_KEEP_ALIVE_EXCLUDE, utils.deepCopy(exclude));
+  store.commit(SET_KEEP_ALIVE_EXCLUDE, Object.assign([], exclude));
 }
 
 //路由访问的时候，加入对应的key处理
-function pushHistory(this: BlueRetreat): void {
+function pushHistory(): void {
   const { key }: { key: string } = history.state;
-  if (!this.router || !key) return;
-  const currentHistory = queryHistoryByKey.call(this, { key });
-  if (currentHistory) return;
-  const { currentRoute } = this.router;
+  if (!router || !key) return;
+  const currentRouterHistory = queryHistoryByKey({ key });
+  if (currentRouterHistory) return;
+  const { currentRoute } = router;
   const { meta } = currentRoute;
   const { name }: { name: string } = meta;
   if (!name) return;
   //写入历史
-  this.history.push({
+  routerHistory.push({
     //state.key
     key,
     //组件的name
@@ -174,44 +209,45 @@ function pushHistory(this: BlueRetreat): void {
 }
 
 //删除历史记录
-function removeHistoryByName(this: BlueRetreat, opts: { name: string }) {
+function removeHistoryByName(opts: { name: string }) {
   const { name } = opts;
-  const { history } = this;
-  const findHistory: THistory[] = queryHistoryByName.call(this, {
+  const findHistory: TRouterHistory[] = queryHistoryByName({
     name,
   });
   while (findHistory.length) {
-    const index = history.indexOf(findHistory[findHistory.length - 1]);
-    history.splice(index, 1);
+    const index = routerHistory.indexOf(findHistory[findHistory.length - 1]);
+    routerHistory.splice(index, 1);
     findHistory.pop();
   }
 }
 
 //通过key查询历史
 function queryHistoryByKey(
-  this: BlueRetreat,
   opts: {
     type?: `current` | `next`;
     findIndex?: boolean;
     key?: string;
   } = {}
-): THistory | number {
-  const { history } = this;
+): TRouterHistory | number | null {
   const {
     /*current next*/
     type = `current`,
     findIndex = false,
     key,
   } = opts;
-  for (let index = 0; index < history.length; index++) {
-    const currentHistory: THistory = history[index];
-    const nextHistory = history[index + 1];
-    if (currentHistory.key === key && type === `next` && nextHistory) {
+  for (let index: number = 0; index < routerHistory.length; index++) {
+    const currentRouterHistory: TRouterHistory = routerHistory[index];
+    const nextRouterHistory = routerHistory[index + 1];
+    if (
+      currentRouterHistory.key === key &&
+      type === `next` &&
+      nextRouterHistory
+    ) {
       if (findIndex) return index;
-      return nextHistory;
-    } else if (currentHistory.key === key && type === `current`) {
+      return nextRouterHistory;
+    } else if (currentRouterHistory.key === key && type === `current`) {
       if (findIndex) return index;
-      return currentHistory;
+      return currentRouterHistory;
     }
   }
   if (findIndex) return -1;
@@ -220,64 +256,22 @@ function queryHistoryByKey(
 
 //通过name查询历史记录 这里提供给router afterEach使用
 function queryHistoryByName(
-  this: BlueRetreat,
   opts: {
     name?: string;
   } = {}
-): THistory[] {
+): TRouterHistory[] {
   const { name } = opts;
-  const findHistory: THistory[] = [];
+  const findHistory: TRouterHistory[] = [];
   if (!name) return findHistory;
-  const { history } = this;
-  history.forEach((_history: THistory) => {
-    if (_history.name !== name) return;
-    findHistory.push(_history);
+  routerHistory.forEach((history: TRouterHistory) => {
+    if (history.name !== name) return;
+    findHistory.push(history);
   });
   return findHistory;
 }
 
-//注册popstate事件处理
-popStateEvent();
-
-export default class BlueRetreat {
-  //配置信息
-  options: TBlueRetreatOptions;
-  //历史记录
-  history: THistory[];
-  //vue路由
-  router: any;
-  //Vuex
-  store: any;
-  //当前的popState的name值
-  currentPopStateName: string;
-  constructor(options: TBlueRetreatOptions) {
-    if (context) return context;
-    this.options = utils.extend(
-      {
-        router: null,
-        store: null,
-      },
-      options
-    ) as TBlueRetreatOptions;
-    //单例
-    context = this;
-    //历史记录存储
-    this.history = [];
-    //vue-router 相关的路由
-    this.router = options.router;
-    //Vuex相关
-    this.store = options.store;
-    //记录当前popstate触发的key
-    this.currentPopStateName = null;
-    //动态注册store
-    storeRegisterModule.call(this);
-    //设置afterEach
-    setRouterHooks.call(this);
-  }
-
-  //获取store module keep alive
-  getExcludeState(): string[] {
-    const { state } = this.store;
-    return state[STORE_MODULE_KEY].exclude || [];
-  }
+//获取store module keep alive
+export function getExcludeState(): string[] {
+  const { state } = store;
+  return state[STORE_MODULE_KEY].exclude || [];
 }

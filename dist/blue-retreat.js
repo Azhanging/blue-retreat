@@ -1,22 +1,22 @@
 /*!
  * 
- * blue-retreat.js 1.0.2
+ * blue-retreat.js 1.0.3
  * (c) 2016-2021 Blue
  * Released under the MIT License.
  * https://github.com/azhanging/blue-retreat
- * time:Sun, 28 Nov 2021 06:17:58 GMT
+ * time:Mon, 20 Dec 2021 15:01:18 GMT
  * 
  */
 (function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
-		module.exports = factory(require("blue-utils"));
+		module.exports = factory();
 	else if(typeof define === 'function' && define.amd)
-		define(["blue-utils"], factory);
+		define([], factory);
 	else if(typeof exports === 'object')
-		exports["BlueRetreat"] = factory(require("blue-utils"));
+		exports["BlueRetreat"] = factory();
 	else
-		root["BlueRetreat"] = factory(root["blueUtils"]);
-})(typeof self !== 'undefined' ? self : this, function(__WEBPACK_EXTERNAL_MODULE__1__) {
+		root["BlueRetreat"] = factory();
+})(typeof self !== 'undefined' ? self : this, function() {
 return /******/ (function(modules) { // webpackBootstrap
 /******/ 	// The module cache
 /******/ 	var installedModules = {};
@@ -109,16 +109,55 @@ return /******/ (function(modules) { // webpackBootstrap
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var blue_utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
-/* harmony import */ var blue_utils__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(blue_utils__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "initBlueRetreat", function() { return initBlueRetreat; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getExcludeState", function() { return getExcludeState; });
+/* harmony import */ var _retreat_data__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "setRetreatData", function() { return _retreat_data__WEBPACK_IMPORTED_MODULE_0__["setRetreatData"]; });
 
-var context = null;
+/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "resetRetreatData", function() { return _retreat_data__WEBPACK_IMPORTED_MODULE_0__["resetRetreatData"]; });
+
+/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "getCurrentRetreatData", function() { return _retreat_data__WEBPACK_IMPORTED_MODULE_0__["getCurrentRetreatData"]; });
+
+/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "getRetreatData", function() { return _retreat_data__WEBPACK_IMPORTED_MODULE_0__["getRetreatData"]; });
+
+
+
+//mutation 方法名
 var SET_KEEP_ALIVE_EXCLUDE = "SET_KEEP_ALIVE_EXCLUDE";
+//vuex模块名
 var STORE_MODULE_KEY = "KEEP_ALIVE";
+//路由的历史记录
+var routerHistory = [];
+//当前的popState的name值
+var currentPopStateName = null;
+//配置vue相关的router以及store
+var store = null;
+var router = null;
+//初始化
+var initBlueRetreat = (function () {
+    var initStatus = false;
+    return function (opts) {
+        if (initStatus)
+            return;
+        var _router = opts.router, _store = opts.store;
+        if (!(_router && _store)) {
+            return console.log("blue-retreat init error,please required set Vue Router and Vuex in options");
+        }
+        //设置相关配置信息
+        router = _router;
+        store = _store;
+        //动态注册store
+        storeRegisterModule();
+        //设置afterEach
+        setRouterHooks();
+        //设置初始化状态
+        initStatus = true;
+    };
+})();
 //把keep alive exclude状态处理在store module
 function storeRegisterModule() {
     var _a;
-    this.store.registerModule(STORE_MODULE_KEY, {
+    store.registerModule(STORE_MODULE_KEY, {
         state: {
             exclude: [],
         },
@@ -131,11 +170,9 @@ function storeRegisterModule() {
 }
 //设置路由钩子状态
 function setRouterHooks() {
-    var _this = this;
-    var router = this.router;
     //路由进前处理
     router.beforeEach(function (to, from, next) {
-        beforePushHistory.call(_this, {
+        beforePushHistory({
             to: to,
             from: from,
             next: next,
@@ -145,96 +182,101 @@ function setRouterHooks() {
     router.afterEach(function () {
         setTimeout(function () {
             //写入history
-            pushHistory.call(_this);
+            pushHistory();
         });
     });
 }
 //注册处理popState事件处理
 function popStateEvent() {
     var popStateHandler = function (event) {
-        if (!context)
-            return;
-        var history = context.history;
+        if (!event.state) {
+            event.state = {};
+        }
+        event.state.retreatData = Object(_retreat_data__WEBPACK_IMPORTED_MODULE_0__["getCurrentRetreatData"])();
         var key = event.state.key;
-        var nextHistory = queryHistoryByKey.call(context, {
+        var nextRouterHistory = queryHistoryByKey({
             key: key,
             type: "next",
         });
-        var currentHistory = queryHistoryByKey.call(context, {
+        var currentRouterHistory = queryHistoryByKey({
             key: key,
         });
         //记录popstate的name,这里可能是被销毁过的history
-        context.currentPopStateName = currentHistory ? currentHistory.name : null;
+        currentPopStateName = currentRouterHistory
+            ? currentRouterHistory.name
+            : null;
+        //如果是那种回环访问，当前的页面是后退回来产生的新页面
+        //这种在routerHistory是不存在的，这里需要移除最后一个路由缓存
+        if (currentRouterHistory === null && routerHistory.length > 0) {
+            nextRouterHistory = routerHistory[routerHistory.length - 1];
+        }
         //如果当前页的下一个页面（后退回来的页面）在history中有记录，这里清空缓存
-        if (nextHistory && history.indexOf(nextHistory.key)) {
-            var name_1 = nextHistory.name, key_1 = nextHistory.key;
+        if (nextRouterHistory) {
+            var _a = nextRouterHistory, name_1 = _a.name, key_1 = _a.key;
             //获取store中的exclude state
-            var exclude = context.getExcludeState();
+            var exclude = getExcludeState();
             if (exclude.includes(name_1))
                 return;
             exclude.push(name_1);
             //设置store
-            setKeepAliveExclude.call(context, exclude);
+            setKeepAliveExclude(exclude);
             setTimeout(function () {
-                var exclude = context.getExcludeState();
+                var exclude = getExcludeState();
                 var index = exclude.indexOf(name_1);
                 if (index !== -1) {
                     exclude.splice(index, 1);
                 }
                 //设置store
-                setKeepAliveExclude.call(context, exclude);
+                setKeepAliveExclude(exclude);
                 //再历史中的index
-                var historyIndex = queryHistoryByKey.call(context, {
+                var historyIndex = queryHistoryByKey({
                     key: key_1,
                     findIndex: true,
                 });
                 //这里删除排序
                 if (historyIndex !== -1) {
-                    history.splice(historyIndex, 1);
+                    routerHistory.splice(historyIndex, 1);
                 }
             }, 50);
         }
     };
-    var event = "popstate";
-    window.addEventListener(event, popStateHandler);
-    return function () {
-        window.removeEventListener(event, popStateHandler);
-    };
+    window.addEventListener("popstate", popStateHandler);
 }
+//注册popstate事件处理
+popStateEvent();
 //进入路由前处理
 function beforePushHistory(opts) {
-    var _this = this;
     var to = opts.to, from = opts.from, next = opts.next;
     var meta = to.meta;
     var name = meta.name;
     //如果当前是通过popstate触发的，不进行缓存的处理
-    if (name === this.currentPopStateName)
+    if (name === currentPopStateName)
         return next();
-    this.currentPopStateName = null;
+    currentPopStateName = null;
     //找一下之前历史是否存在相同的缓存（回环访问的那种情况）
-    var findHistory = queryHistoryByName.call(this, { name: name });
+    var findHistory = queryHistoryByName({ name: name });
     //如果之前存在缓存了，先杀掉之前的缓存
     if (findHistory.length === 0)
         return next();
     //获取store中的exclude state
-    var exclude = this.getExcludeState();
+    var exclude = getExcludeState();
     if (!exclude.includes(name)) {
         //写入排除缓存name
         exclude.push(name);
         //设置store
-        setKeepAliveExclude.call(this, exclude);
+        setKeepAliveExclude(exclude);
         //下一跳移除对应的规则
         setTimeout(function () {
             //获取store中的exclude state
-            var exclude = _this.getExcludeState();
+            var exclude = getExcludeState();
             var index = exclude.indexOf(name);
             if (index !== -1) {
                 exclude.splice(index, 1);
             }
             //设置store
-            setKeepAliveExclude.call(_this, exclude);
+            setKeepAliveExclude(exclude);
             //删除历史记录
-            removeHistoryByName.call(_this, { name: name });
+            removeHistoryByName({ name: name });
             //完成处理
             next();
         });
@@ -246,23 +288,23 @@ function beforePushHistory(opts) {
 }
 //设置store
 function setKeepAliveExclude(exclude) {
-    this.store.commit(SET_KEEP_ALIVE_EXCLUDE, blue_utils__WEBPACK_IMPORTED_MODULE_0___default.a.deepCopy(exclude));
+    store.commit(SET_KEEP_ALIVE_EXCLUDE, Object.assign([], exclude));
 }
 //路由访问的时候，加入对应的key处理
 function pushHistory() {
     var key = history.state.key;
-    if (!this.router || !key)
+    if (!router || !key)
         return;
-    var currentHistory = queryHistoryByKey.call(this, { key: key });
-    if (currentHistory)
+    var currentRouterHistory = queryHistoryByKey({ key: key });
+    if (currentRouterHistory)
         return;
-    var currentRoute = this.router.currentRoute;
+    var currentRoute = router.currentRoute;
     var meta = currentRoute.meta;
     var name = meta.name;
     if (!name)
         return;
     //写入历史
-    this.history.push({
+    routerHistory.push({
         //state.key
         key: key,
         //组件的name
@@ -274,37 +316,37 @@ function pushHistory() {
 //删除历史记录
 function removeHistoryByName(opts) {
     var name = opts.name;
-    var history = this.history;
-    var findHistory = queryHistoryByName.call(this, {
+    var findHistory = queryHistoryByName({
         name: name,
     });
     while (findHistory.length) {
-        var index = history.indexOf(findHistory[findHistory.length - 1]);
-        history.splice(index, 1);
+        var index = routerHistory.indexOf(findHistory[findHistory.length - 1]);
+        routerHistory.splice(index, 1);
         findHistory.pop();
     }
 }
 //通过key查询历史
 function queryHistoryByKey(opts) {
     if (opts === void 0) { opts = {}; }
-    var history = this.history;
     var 
     /*current next*/
     _a = opts.type, 
     /*current next*/
     type = _a === void 0 ? "current" : _a, _b = opts.findIndex, findIndex = _b === void 0 ? false : _b, key = opts.key;
-    for (var index = 0; index < history.length; index++) {
-        var currentHistory = history[index];
-        var nextHistory = history[index + 1];
-        if (currentHistory.key === key && type === "next" && nextHistory) {
+    for (var index = 0; index < routerHistory.length; index++) {
+        var currentRouterHistory = routerHistory[index];
+        var nextRouterHistory = routerHistory[index + 1];
+        if (currentRouterHistory.key === key &&
+            type === "next" &&
+            nextRouterHistory) {
             if (findIndex)
                 return index;
-            return nextHistory;
+            return nextRouterHistory;
         }
-        else if (currentHistory.key === key && type === "current") {
+        else if (currentRouterHistory.key === key && type === "current") {
             if (findIndex)
                 return index;
-            return currentHistory;
+            return currentRouterHistory;
         }
     }
     if (findIndex)
@@ -318,56 +360,60 @@ function queryHistoryByName(opts) {
     var findHistory = [];
     if (!name)
         return findHistory;
-    var history = this.history;
-    history.forEach(function (_history) {
-        if (_history.name !== name)
+    routerHistory.forEach(function (history) {
+        if (history.name !== name)
             return;
-        findHistory.push(_history);
+        findHistory.push(history);
     });
     return findHistory;
 }
-//注册popstate事件处理
-popStateEvent();
-var BlueRetreat = /** @class */ (function () {
-    function BlueRetreat(options) {
-        if (context)
-            return context;
-        this.options = blue_utils__WEBPACK_IMPORTED_MODULE_0___default.a.extend({
-            router: null,
-            store: null,
-        }, options);
-        //单例
-        context = this;
-        //历史记录存储
-        this.history = [];
-        //vue-router 相关的路由
-        this.router = options.router;
-        //Vuex相关
-        this.store = options.store;
-        //记录当前popstate触发的key
-        this.currentPopStateName = null;
-        //动态注册store
-        storeRegisterModule.call(this);
-        //设置afterEach
-        setRouterHooks.call(this);
-    }
-    //获取store module keep alive
-    BlueRetreat.prototype.getExcludeState = function () {
-        var state = this.store.state;
-        return state[STORE_MODULE_KEY].exclude || [];
-    };
-    return BlueRetreat;
-}());
-/* harmony default export */ __webpack_exports__["default"] = (BlueRetreat);
+//获取store module keep alive
+function getExcludeState() {
+    var state = store.state;
+    return state[STORE_MODULE_KEY].exclude || [];
+}
 
 
 /***/ }),
 /* 1 */
-/***/ (function(module, exports) {
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
 
-module.exports = __WEBPACK_EXTERNAL_MODULE__1__;
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "setRetreatData", function() { return setRetreatData; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "resetRetreatData", function() { return resetRetreatData; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getCurrentRetreatData", function() { return getCurrentRetreatData; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getRetreatData", function() { return getRetreatData; });
+//需要撤退的数据
+var retreatData = {};
+//设置需要传递数据
+function setRetreatData(_retreatData) {
+    retreatData = _retreatData;
+}
+//清空传递数据
+function resetRetreatData() {
+    retreatData = {};
+}
+//获取当前的撤退数据
+function getCurrentRetreatData() {
+    return retreatData;
+}
+//获取传递数据
+function getRetreatData(opts) {
+    if (opts === void 0) { opts = {}; }
+    var 
+    //只会使用一次
+    _a = opts.once, 
+    //只会使用一次
+    once = _a === void 0 ? true : _a;
+    var current = retreatData;
+    //只会使用一次，清空原有的数据
+    once && resetRetreatData();
+    return current;
+}
+
 
 /***/ })
-/******/ ])["default"];
+/******/ ]);
 });
 //# sourceMappingURL=blue-retreat.js.map

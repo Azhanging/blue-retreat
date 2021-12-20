@@ -1,6 +1,6 @@
 # blue-retreat
 
-Vue keep-alive popstate manage
+### Vue KeepAlive 后退处理
 
 ## 简介
 
@@ -16,7 +16,7 @@ npm i blue-retreat -S
 
 ## 使用说明
 
-## BlueRetreat 类
+## initBlueRetreat 方法
 
 ### Options
 
@@ -34,14 +34,11 @@ Vuex 实例
 
 ---
 
-### prototype
-
-
 类只存在两个配置，使用起来非常方便。
 
 ```javascript
 // 在注册路由前使用模块
-import BlueRetreat from 'blue-retreat;
+import {initBlueRetreat} from 'blue-retreat;
 import Router from 'vue-router';
 import Vuex from 'vuex;
 
@@ -49,20 +46,23 @@ const router = new Router({
   routes:[{
     path:`page`,
     meta:{
-      name:`page1`
+      name:`page-name`
     }
   }]
 });
 const store = new Vuex();
-const retreat = new BlueRetreat({
+
+//初始化retreat
+initBlueRetreat({
   router,
   store
 });
+
 ```
 
-### 通过 BlueRetreat 的 getExcludeState 方法获取 exclude 状态
+### 通过 getExcludeState 方法获取 exclude 状态
 
-由于 KeepAlive 组件在做缓存时，会使用到页面.vue 文件中的 name 作为唯一表示，我们需要在.vue 文件中定义好 name 值，由于在 router 中获取不到页面的name，需要定义.vue 文件的 name 同时也要定义路由中的 meta.name，如上面例子所示
+由于 KeepAlive 组件在做缓存时，会使用到页面.vue 文件中的 name 作为唯一表示，我们需要在.vue 文件中定义好 name 值，由于在 router 中获取不到页面的 name，需要定义.vue 文件的 name 同时也要定义路由中的 meta.name，如上面例子所示
 
 ```html
 <KeepAlive :exclude="exclude">
@@ -70,15 +70,16 @@ const retreat = new BlueRetreat({
 </KeepAlive>
 
 <script>
+  import { getExcludeState } from "blue-retreat";
   export default {
     //这里的name是唯一的，和router中的meta.name作为匹配使用
-    name: `page1`,
+    name: `page-name`,
     computed: {
       exclude() {
         //如果有自身需要排除的，可以通过这个方式concat getExcludeState
         return [
           /* 你自己的exclude */
-        ].concat(retreat.getExcludeState());
+        ].concat(getExcludeState());
       },
     },
   };
@@ -87,6 +88,37 @@ const retreat = new BlueRetreat({
 
 ## 一些特殊场景的处理
 
-场景1：A->B->C->A->C->B 存在回环处理的，第一个A缓存会被删除，后退回到第一个A后，A将会重新初始化render
+场景 1：A->B->C->A->C->B 存在回环处理的，第一个 A 缓存会被删除，后退回到第一个 A 后，A 将会重新初始化 render
 
-场景2：A->A的这种情况不做任何处理，需要自身处理$route的变化，以及的对应业务处理
+场景 2：A->A 的这种情况不做任何处理，需要自身处理$route 的变化，以及的对应业务处理
+
+---
+
+## 后退传值
+
+### page2
+
+```javascript
+  //page2
+  import {setRetreatData} from 'blue-retreat;
+  setRetreatData({
+    someData:`data`
+  });
+```
+
+### 通过后退到 page1
+
+```javascript
+  //page1
+  import {getRetreatData} from 'blue-retreat;
+  const retreatData = getRetreatData();
+  //retreatData === {someData:`data`}
+```
+
+### 关于getRetreatData方法
+
+getRetreatData({
+  once?: boolean = true
+});
+
+如果被使用一次就会被销毁回默认值{};当然也可以跨页面获取值，可以给到具体需要使用到的页面来使用到值。

@@ -1,19 +1,8 @@
-interface TBlueRetreatOptions {
+export * from "./retreat-data";
+declare let store: any;
+declare let router: any;
+export declare const initBlueRetreat: (opts: {
     router: any;
     store: any;
-}
-interface THistory {
-    key: string;
-    name: string;
-    time: number;
-}
-export default class BlueRetreat {
-    options: TBlueRetreatOptions;
-    history: THistory[];
-    router: any;
-    store: any;
-    currentPopStateName: string;
-    constructor(options: TBlueRetreatOptions);
-    getExcludeState(): string[];
-}
-export {};
+}) => void;
+export declare function getExcludeState(): string[];
