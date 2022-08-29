@@ -28,9 +28,9 @@ VueRouter 实例
 
 ---
 
-#### store: Vuex
+#### store: Vuex | Pinia.defineStore
 
-Vuex 实例
+Vuex 实例 或者 Pinia的store
 
 ---
 
@@ -38,9 +38,9 @@ Vuex 实例
 
 ```javascript
 // 在注册路由前使用模块
-import {initBlueRetreat} from 'blue-retreat;
+import {initBlueRetreat} from 'blue-retreat';
 import Router from 'vue-router';
-import Vuex from 'vuex;
+import Vuex from 'vuex';
 
 const router = new Router({
   routes:[{
@@ -57,6 +57,39 @@ initBlueRetreat({
   router,
   store
 });
+
+```
+
+对于使用pinia
+```javascript
+import {initBlueRetreat} from 'blue-retreat';
+import {createApp} from 'vue';
+import Router from 'vue-router';
+import {createPinia,defineStore} from 'pinia';
+
+//创建vue应用
+const app = createApp();
+
+//初始化pinia
+app.use(createPinia());
+
+const router = new Router({
+  routes:[{
+    path:`page`,
+    meta:{
+      name:`page-name`
+    }
+  }]
+});
+
+//初始化retreat 使用pinia需要在createPinia后再调用initBlueRetreat
+initBlueRetreat({
+  router,
+  //如果使用的为pinia，这里只需传入defineStore即可，内部会进行相关的store创建
+  store: defineStore
+});
+
+app.$mount(`#app`);
 
 ```
 
@@ -100,7 +133,7 @@ initBlueRetreat({
 
 ```javascript
   //page2
-  import {setRetreatData} from 'blue-retreat;
+  import {setRetreatData} from 'blue-retreat';
   setRetreatData({
     someData:`data`
   });
@@ -110,7 +143,7 @@ initBlueRetreat({
 
 ```javascript
   //page1
-  import {getRetreatData} from 'blue-retreat;
+  import {getRetreatData} from 'blue-retreat';
   const retreatData = getRetreatData();
   //retreatData === {someData:`data`}
 ```

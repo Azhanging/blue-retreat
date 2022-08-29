@@ -1,10 +1,10 @@
 /*!
  * 
  * blue-retreat.js 1.0.3
- * (c) 2016-2021 Blue
+ * (c) 2016-2022 Blue
  * Released under the MIT License.
  * https://github.com/azhanging/blue-retreat
- * time:Mon, 20 Dec 2021 15:01:18 GMT
+ * time:Mon, 29 Aug 2022 16:40:07 GMT
  * 
  */
 (function webpackUniversalModuleDefinition(root, factory) {
@@ -130,10 +130,22 @@ var STORE_MODULE_KEY = "KEEP_ALIVE";
 var routerHistory = [];
 //当前的popState的name值
 var currentPopStateName = null;
-//配置vue相关的router以及store
+//配置vue|pinia相关的router以及store
 var store = null;
 var router = null;
+//实际的存储环境
+var isPinia = false;
+var isVuex = false;
+//针对vue3 ref处理
+function isRef(ref) {
+    return ref.__v_isRef;
+}
+//针对vue3 ref处理
+function unref(ref) {
+    return isRef(ref) ? ref.value : ref;
+}
 //初始化
+//如果使用的是pinia，需要在createPinia()后使用当前进行初始化配置
 var initBlueRetreat = (function () {
     var initStatus = false;
     return function (opts) {
@@ -141,13 +153,13 @@ var initBlueRetreat = (function () {
             return;
         var _router = opts.router, _store = opts.store;
         if (!(_router && _store)) {
-            return console.log("blue-retreat init error,please required set Vue Router and Vuex in options");
+            return console.log("blue-retreat init error,please required set Vue Router and (Vuex|Pinia) in options");
         }
         //设置相关配置信息
         router = _router;
         store = _store;
         //动态注册store
-        storeRegisterModule();
+        storeRegister();
         //设置afterEach
         setRouterHooks();
         //设置初始化状态
@@ -155,8 +167,41 @@ var initBlueRetreat = (function () {
     };
 })();
 //把keep alive exclude状态处理在store module
-function storeRegisterModule() {
+//需要createPinia()后使用当前
+function storeRegister() {
+    //对于pinia的处理 这里处理pinia的定义
+    //Pinia的传入defineStore来构建
+    if (typeof store === "function") {
+        piniaStore();
+    }
+    else {
+        vuexStore();
+    }
+}
+//Pinia store
+function piniaStore() {
+    var useRetreatStore = store(STORE_MODULE_KEY, {
+        state: function () { return ({
+            //排除数据
+            exclude: [],
+        }); },
+    });
+    //获取store的实例
+    store = useRetreatStore();
+    //判断是否为pinia特性
+    if (!store || !store.$id) {
+        store = null;
+        new Error("store is not Pinia");
+    }
+    else {
+        //存储库判断
+        isPinia = true;
+    }
+}
+//vuex store
+function vuexStore() {
     var _a;
+    //对于vuex的处理
     store.registerModule(STORE_MODULE_KEY, {
         state: {
             exclude: [],
@@ -167,6 +212,8 @@ function storeRegisterModule() {
             },
             _a),
     });
+    //存储库判断
+    isVuex = true;
 }
 //设置路由钩子状态
 function setRouterHooks() {
@@ -193,7 +240,8 @@ function popStateEvent() {
             event.state = {};
         }
         event.state.retreatData = Object(_retreat_data__WEBPACK_IMPORTED_MODULE_0__["getCurrentRetreatData"])();
-        var key = event.state.key;
+        var state = event.state;
+        var key = state.key || state.position;
         var nextRouterHistory = queryHistoryByKey({
             key: key,
             type: "next",
@@ -288,18 +336,25 @@ function beforePushHistory(opts) {
 }
 //设置store
 function setKeepAliveExclude(exclude) {
-    store.commit(SET_KEEP_ALIVE_EXCLUDE, Object.assign([], exclude));
+    var _exclude = Object.assign([], exclude);
+    if (isPinia) {
+        store.exclude = _exclude;
+    }
+    else {
+        store.commit(SET_KEEP_ALIVE_EXCLUDE, _exclude);
+    }
 }
 //路由访问的时候，加入对应的key处理
 function pushHistory() {
-    var key = history.state.key;
+    var state = history.state;
+    var key = state.key || state.position;
     if (!router || !key)
         return;
     var currentRouterHistory = queryHistoryByKey({ key: key });
     if (currentRouterHistory)
         return;
     var currentRoute = router.currentRoute;
-    var meta = currentRoute.meta;
+    var meta = unref(currentRoute).meta;
     var name = meta.name;
     if (!name)
         return;
@@ -369,8 +424,19 @@ function queryHistoryByName(opts) {
 }
 //获取store module keep alive
 function getExcludeState() {
-    var state = store.state;
-    return state[STORE_MODULE_KEY].exclude || [];
+    var exclude = [];
+    //不存在
+    if (store) {
+        //pinia处理
+        if (isPinia) {
+            return store.exclude || exclude;
+        }
+        else if (isVuex) {
+            //Vuex处理
+            return store.state[STORE_MODULE_KEY].exclude || exclude;
+        }
+    }
+    return exclude;
 }
 
 
