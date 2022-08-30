@@ -1,10 +1,10 @@
 /*!
  * 
- * blue-retreat.js 1.0.3
+ * blue-retreat.js 1.0.4
  * (c) 2016-2022 Blue
  * Released under the MIT License.
  * https://github.com/azhanging/blue-retreat
- * time:Mon, 29 Aug 2022 16:40:07 GMT
+ * time:Tue, 30 Aug 2022 16:01:18 GMT
  * 
  */
 (function webpackUniversalModuleDefinition(root, factory) {
@@ -109,9 +109,12 @@ return /******/ (function(modules) { // webpackBootstrap
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "initBlueRetreat", function() { return initBlueRetreat; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "defineBlueRetreat", function() { return defineBlueRetreat; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getExcludeState", function() { return getExcludeState; });
 /* harmony import */ var _retreat_data__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(2);
+/* harmony import */ var _const__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
+/* harmony import */ var _store__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(4);
 /* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "setRetreatData", function() { return _retreat_data__WEBPACK_IMPORTED_MODULE_0__["setRetreatData"]; });
 
 /* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "resetRetreatData", function() { return _retreat_data__WEBPACK_IMPORTED_MODULE_0__["resetRetreatData"]; });
@@ -122,10 +125,9 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
-//mutation 方法名
-var SET_KEEP_ALIVE_EXCLUDE = "SET_KEEP_ALIVE_EXCLUDE";
-//vuex模块名
-var STORE_MODULE_KEY = "KEEP_ALIVE";
+
+
+
 //路由的历史记录
 var routerHistory = [];
 //当前的popState的name值
@@ -133,23 +135,12 @@ var currentPopStateName = null;
 //配置vue|pinia相关的router以及store
 var store = null;
 var router = null;
-//实际的存储环境
-var isPinia = false;
-var isVuex = false;
-//针对vue3 ref处理
-function isRef(ref) {
-    return ref.__v_isRef;
-}
-//针对vue3 ref处理
-function unref(ref) {
-    return isRef(ref) ? ref.value : ref;
-}
 //初始化
 //如果使用的是pinia，需要在createPinia()后使用当前进行初始化配置
-var initBlueRetreat = (function () {
-    var initStatus = false;
+var defineBlueRetreat = (function () {
+    var defineStatus = false;
     return function (opts) {
-        if (initStatus)
+        if (defineStatus)
             return;
         var _router = opts.router, _store = opts.store;
         if (!(_router && _store)) {
@@ -157,64 +148,14 @@ var initBlueRetreat = (function () {
         }
         //设置相关配置信息
         router = _router;
-        store = _store;
         //动态注册store
-        storeRegister();
+        store = _store__WEBPACK_IMPORTED_MODULE_3__["storeRegister"](_store);
         //设置afterEach
         setRouterHooks();
         //设置初始化状态
-        initStatus = true;
+        defineStatus = true;
     };
 })();
-//把keep alive exclude状态处理在store module
-//需要createPinia()后使用当前
-function storeRegister() {
-    //对于pinia的处理 这里处理pinia的定义
-    //Pinia的传入defineStore来构建
-    if (typeof store === "function") {
-        piniaStore();
-    }
-    else {
-        vuexStore();
-    }
-}
-//Pinia store
-function piniaStore() {
-    var useRetreatStore = store(STORE_MODULE_KEY, {
-        state: function () { return ({
-            //排除数据
-            exclude: [],
-        }); },
-    });
-    //获取store的实例
-    store = useRetreatStore();
-    //判断是否为pinia特性
-    if (!store || !store.$id) {
-        store = null;
-        new Error("store is not Pinia");
-    }
-    else {
-        //存储库判断
-        isPinia = true;
-    }
-}
-//vuex store
-function vuexStore() {
-    var _a;
-    //对于vuex的处理
-    store.registerModule(STORE_MODULE_KEY, {
-        state: {
-            exclude: [],
-        },
-        mutations: (_a = {},
-            _a[SET_KEEP_ALIVE_EXCLUDE] = function (state, exclude) {
-                state[STORE_MODULE_KEY] = exclude;
-            },
-            _a),
-    });
-    //存储库判断
-    isVuex = true;
-}
 //设置路由钩子状态
 function setRouterHooks() {
     //路由进前处理
@@ -235,13 +176,14 @@ function setRouterHooks() {
 }
 //注册处理popState事件处理
 function popStateEvent() {
+    //这里的类型
     var popStateHandler = function (event) {
         if (!event.state) {
             event.state = {};
         }
         event.state.retreatData = Object(_retreat_data__WEBPACK_IMPORTED_MODULE_0__["getCurrentRetreatData"])();
         var state = event.state;
-        var key = state.key || state.position;
+        var key = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getStateKey"])(state);
         var nextRouterHistory = queryHistoryByKey({
             key: key,
             type: "next",
@@ -268,6 +210,7 @@ function popStateEvent() {
             exclude.push(name_1);
             //设置store
             setKeepAliveExclude(exclude);
+            //下一宏任务处理
             setTimeout(function () {
                 var exclude = getExcludeState();
                 var index = exclude.indexOf(name_1);
@@ -294,7 +237,7 @@ function popStateEvent() {
 popStateEvent();
 //进入路由前处理
 function beforePushHistory(opts) {
-    var to = opts.to, from = opts.from, next = opts.next;
+    var to = opts.to, next = opts.next;
     var meta = to.meta;
     var name = meta.name;
     //如果当前是通过popstate触发的，不进行缓存的处理
@@ -337,24 +280,25 @@ function beforePushHistory(opts) {
 //设置store
 function setKeepAliveExclude(exclude) {
     var _exclude = Object.assign([], exclude);
-    if (isPinia) {
+    if (_store__WEBPACK_IMPORTED_MODULE_3__["isPinia"]) {
         store.exclude = _exclude;
     }
-    else {
-        store.commit(SET_KEEP_ALIVE_EXCLUDE, _exclude);
+    else if (_store__WEBPACK_IMPORTED_MODULE_3__["isVuex"]) {
+        store.commit(_const__WEBPACK_IMPORTED_MODULE_2__["SET_KEEP_ALIVE_EXCLUDE"], _exclude);
     }
 }
 //路由访问的时候，加入对应的key处理
 function pushHistory() {
     var state = history.state;
-    var key = state.key || state.position;
-    if (!router || !key)
+    //使用定位信息处理
+    var key = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getStateKey"])(state);
+    if (!router || (!key && key !== 0))
         return;
     var currentRouterHistory = queryHistoryByKey({ key: key });
     if (currentRouterHistory)
         return;
     var currentRoute = router.currentRoute;
-    var meta = unref(currentRoute).meta;
+    var meta = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["unref"])(currentRoute).meta;
     var name = meta.name;
     if (!name)
         return;
@@ -364,8 +308,6 @@ function pushHistory() {
         key: key,
         //组件的name
         name: name,
-        //这里是记录加入时间
-        time: +new Date(),
     });
 }
 //删除历史记录
@@ -380,14 +322,11 @@ function removeHistoryByName(opts) {
         findHistory.pop();
     }
 }
-//通过key查询历史
+//通过key查询历史,
+//查询key记录的索引
 function queryHistoryByKey(opts) {
     if (opts === void 0) { opts = {}; }
-    var 
-    /*current next*/
-    _a = opts.type, 
-    /*current next*/
-    type = _a === void 0 ? "current" : _a, _b = opts.findIndex, findIndex = _b === void 0 ? false : _b, key = opts.key;
+    var _a = opts.type, type = _a === void 0 ? "current" : _a, _b = opts.findIndex, findIndex = _b === void 0 ? false : _b, key = opts.key;
     for (var index = 0; index < routerHistory.length; index++) {
         var currentRouterHistory = routerHistory[index];
         var nextRouterHistory = routerHistory[index + 1];
@@ -428,12 +367,12 @@ function getExcludeState() {
     //不存在
     if (store) {
         //pinia处理
-        if (isPinia) {
+        if (_store__WEBPACK_IMPORTED_MODULE_3__["isPinia"]) {
             return store.exclude || exclude;
         }
-        else if (isVuex) {
+        else if (_store__WEBPACK_IMPORTED_MODULE_3__["isVuex"]) {
             //Vuex处理
-            return store.state[STORE_MODULE_KEY].exclude || exclude;
+            return store.state[_const__WEBPACK_IMPORTED_MODULE_2__["STORE_MODULE_NAME"]].exclude || exclude;
         }
     }
     return exclude;
@@ -476,6 +415,109 @@ function getRetreatData(opts) {
     //只会使用一次，清空原有的数据
     once && resetRetreatData();
     return current;
+}
+
+
+/***/ }),
+/* 2 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "unref", function() { return unref; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getStateKey", function() { return getStateKey; });
+//针对vue3 ref处理
+function isRef(ref) {
+    return ref.__v_isRef;
+}
+//针对vue3 ref处理
+function unref(ref) {
+    return isRef(ref) ? ref.value : ref;
+}
+//获取状态
+function getStateKey(state) {
+    return state.key || state.position || "";
+}
+
+
+/***/ }),
+/* 3 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SET_KEEP_ALIVE_EXCLUDE", function() { return SET_KEEP_ALIVE_EXCLUDE; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "STORE_MODULE_NAME", function() { return STORE_MODULE_NAME; });
+//mutation 方法名
+var SET_KEEP_ALIVE_EXCLUDE = "SET_KEEP_ALIVE_EXCLUDE";
+//模块名 || store id
+var STORE_MODULE_NAME = "KEEP_ALIVE";
+
+
+/***/ }),
+/* 4 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "isPinia", function() { return isPinia; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "isVuex", function() { return isVuex; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "storeRegister", function() { return storeRegister; });
+/* harmony import */ var _const__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(3);
+
+//实际的存储环境
+var isPinia = false;
+var isVuex = false;
+//把keep alive exclude状态处理在store module
+//需要createPinia()后使用当前
+function storeRegister(store) {
+    //对于pinia的处理 这里处理pinia的定义
+    //Pinia的传入defineStore来构建
+    if (typeof store === "function") {
+        return piniaStore(store);
+    }
+    else {
+        return vuexStore(store);
+    }
+}
+//Pinia store
+function piniaStore(store) {
+    var useRetreatStore = store(_const__WEBPACK_IMPORTED_MODULE_0__["STORE_MODULE_NAME"], {
+        state: function () { return ({
+            //排除数据
+            exclude: [],
+        }); },
+    });
+    //获取store的实例
+    store = useRetreatStore();
+    //判断是否为pinia特性
+    if (!store || !store.$id) {
+        store = null;
+        console.error("store is not Pinia");
+    }
+    else {
+        //存储库判断
+        isPinia = true;
+    }
+    return store;
+}
+//vuex store
+function vuexStore(store) {
+    var _a;
+    //对于vuex的处理
+    store.registerModule(_const__WEBPACK_IMPORTED_MODULE_0__["STORE_MODULE_NAME"], {
+        state: {
+            exclude: [],
+        },
+        mutations: (_a = {},
+            _a[_const__WEBPACK_IMPORTED_MODULE_0__["SET_KEEP_ALIVE_EXCLUDE"]] = function (state, exclude) {
+                state[_const__WEBPACK_IMPORTED_MODULE_0__["STORE_MODULE_NAME"]] = exclude;
+            },
+            _a),
+    });
+    //存储库判断
+    isVuex = true;
+    return store;
 }
 
 

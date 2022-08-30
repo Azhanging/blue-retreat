@@ -1,55 +1,36 @@
+import type {
+  TStateKey,
+  TRouterHistory,
+  TRouterTo,
+  TRouterFrom,
+  TRouterNext,
+  THistoryState,
+  TStore,
+  TRouter,
+  TRouterHookOptions,
+} from "./types";
 import { getCurrentRetreatData } from "./retreat-data";
+import { unref, getStateKey } from "./utils";
+import { SET_KEEP_ALIVE_EXCLUDE, STORE_MODULE_NAME } from "./const";
+import * as storeModule from "./store";
 export * from "./retreat-data";
-
-//state key
-type TStateKey = string | number;
-
-//历史类型
-interface TRouterHistory {
-  //state.key
-  key: TStateKey;
-  //组件的name
-  name: string;
-  //这里是记录加入时间
-  time: number;
-}
-
-//mutation 方法名
-const SET_KEEP_ALIVE_EXCLUDE: string = `SET_KEEP_ALIVE_EXCLUDE`;
-
-//vuex模块名
-const STORE_MODULE_KEY: string = `KEEP_ALIVE`;
 
 //路由的历史记录
 let routerHistory: TRouterHistory[] = [];
 
 //当前的popState的name值
-let currentPopStateName: string = null;
+let currentPopStateName: string | null = null;
 
 //配置vue|pinia相关的router以及store
-let store: any = null;
-let router: any = null;
-
-//实际的存储环境
-let isPinia = false;
-let isVuex = false;
-
-//针对vue3 ref处理
-function isRef(ref: any): boolean {
-  return ref.__v_isRef;
-}
-
-//针对vue3 ref处理
-function unref(ref: any): any {
-  return isRef(ref) ? ref.value : ref;
-}
+let store: TStore = null;
+let router: TRouter = null;
 
 //初始化
 //如果使用的是pinia，需要在createPinia()后使用当前进行初始化配置
-export const initBlueRetreat = (() => {
-  let initStatus = false;
-  return (opts: { router: any; store: any }) => {
-    if (initStatus) return;
+export const defineBlueRetreat = (() => {
+  let defineStatus = false;
+  return (opts: { router: TRouter; store: TStore }) => {
+    if (defineStatus) return;
     let { router: _router, store: _store } = opts;
     if (!(_router && _store)) {
       return console.log(
@@ -58,69 +39,19 @@ export const initBlueRetreat = (() => {
     }
     //设置相关配置信息
     router = _router;
-    store = _store;
     //动态注册store
-    storeRegister();
+    store = storeModule.storeRegister(_store);
     //设置afterEach
     setRouterHooks();
     //设置初始化状态
-    initStatus = true;
+    defineStatus = true;
   };
 })();
-
-//把keep alive exclude状态处理在store module
-//需要createPinia()后使用当前
-function storeRegister(): void {
-  //对于pinia的处理 这里处理pinia的定义
-  //Pinia的传入defineStore来构建
-  if (typeof store === `function`) {
-    piniaStore();
-  } else {
-    vuexStore();
-  }
-}
-
-//Pinia store
-function piniaStore(): void {
-  const useRetreatStore = store(STORE_MODULE_KEY, {
-    state: () => ({
-      //排除数据
-      exclude: [],
-    }),
-  });
-  //获取store的实例
-  store = useRetreatStore();
-  //判断是否为pinia特性
-  if (!store || !store.$id) {
-    store = null;
-    new Error(`store is not Pinia`);
-  } else {
-    //存储库判断
-    isPinia = true;
-  }
-}
-
-//vuex store
-function vuexStore(): void {
-  //对于vuex的处理
-  store.registerModule(STORE_MODULE_KEY, {
-    state: {
-      exclude: [],
-    },
-    mutations: {
-      [SET_KEEP_ALIVE_EXCLUDE](state, exclude) {
-        state[STORE_MODULE_KEY] = exclude;
-      },
-    },
-  });
-  //存储库判断
-  isVuex = true;
-}
 
 //设置路由钩子状态
 function setRouterHooks() {
   //路由进前处理
-  router.beforeEach((to: any, from: any, next: any) => {
+  router.beforeEach((to: TRouterTo, from: TRouterFrom, next: TRouterNext) => {
     beforePushHistory({
       to,
       from,
@@ -138,13 +69,14 @@ function setRouterHooks() {
 
 //注册处理popState事件处理
 function popStateEvent() {
-  const popStateHandler = (event) => {
+  //这里的类型
+  const popStateHandler = (event: any) => {
     if (!event.state) {
       event.state = {};
     }
     event.state.retreatData = getCurrentRetreatData();
-    const { state }: { state: any } = event;
-    const key = state.key || state.position;
+    const { state }: { state: THistoryState } = event;
+    const key = getStateKey(state);
     let nextRouterHistory = queryHistoryByKey({
       key,
       type: `next`,
@@ -170,6 +102,7 @@ function popStateEvent() {
       exclude.push(name);
       //设置store
       setKeepAliveExclude(exclude);
+      //下一宏任务处理
       setTimeout(() => {
         const exclude = getExcludeState();
         const index = exclude.indexOf(name);
@@ -197,8 +130,8 @@ function popStateEvent() {
 popStateEvent();
 
 //进入路由前处理
-function beforePushHistory(opts) {
-  const { to, from, next } = opts;
+function beforePushHistory(opts: TRouterHookOptions) {
+  const { to, next } = opts;
   const { meta } = to;
   const { name }: { name: string } = meta;
   //如果当前是通过popstate触发的，不进行缓存的处理
@@ -239,18 +172,19 @@ function beforePushHistory(opts) {
 //设置store
 function setKeepAliveExclude(exclude: string[]) {
   const _exclude = Object.assign([], exclude);
-  if (isPinia) {
+  if (storeModule.isPinia) {
     store.exclude = _exclude;
-  } else {
+  } else if (storeModule.isVuex) {
     store.commit(SET_KEEP_ALIVE_EXCLUDE, _exclude);
   }
 }
 
 //路由访问的时候，加入对应的key处理
 function pushHistory(): void {
-  const { state }: { state: any } = history;
-  const key: TStateKey = state.key || state.position;
-  if (!router || !key) return;
+  const { state }: { state: THistoryState } = history;
+  //使用定位信息处理
+  const key: TStateKey = getStateKey(state);
+  if (!router || (!key && key !== 0)) return;
   const currentRouterHistory = queryHistoryByKey({ key });
   if (currentRouterHistory) return;
   const { currentRoute } = router;
@@ -263,8 +197,6 @@ function pushHistory(): void {
     key,
     //组件的name
     name,
-    //这里是记录加入时间
-    time: +new Date(),
   });
 }
 
@@ -281,7 +213,8 @@ function removeHistoryByName(opts: { name: string }) {
   }
 }
 
-//通过key查询历史
+//通过key查询历史,
+//查询key记录的索引
 function queryHistoryByKey(
   opts: {
     type?: `current` | `next`;
@@ -289,12 +222,7 @@ function queryHistoryByKey(
     key?: TStateKey;
   } = {}
 ): TRouterHistory | number | null {
-  const {
-    /*current next*/
-    type = `current`,
-    findIndex = false,
-    key,
-  } = opts;
+  const { type = `current`, findIndex = false, key } = opts;
   for (let index: number = 0; index < routerHistory.length; index++) {
     const currentRouterHistory: TRouterHistory = routerHistory[index];
     const nextRouterHistory = routerHistory[index + 1];
@@ -332,15 +260,15 @@ function queryHistoryByName(
 
 //获取store module keep alive
 export function getExcludeState(): string[] {
-  const exclude = [];
+  const exclude: string[] = [];
   //不存在
   if (store) {
     //pinia处理
-    if (isPinia) {
+    if (storeModule.isPinia) {
       return store.exclude || exclude;
-    } else if (isVuex) {
+    } else if (storeModule.isVuex) {
       //Vuex处理
-      return store.state[STORE_MODULE_KEY].exclude || exclude;
+      return store.state[STORE_MODULE_NAME].exclude || exclude;
     }
   }
   return exclude;

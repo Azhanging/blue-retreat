@@ -1,8 +1,9 @@
+import type { TStore, TRouter } from "./types";
 export * from "./retreat-data";
-declare let store: any;
-declare let router: any;
-export declare const initBlueRetreat: (opts: {
-    router: any;
-    store: any;
+declare let store: TStore;
+declare let router: TRouter;
+export declare const defineBlueRetreat: (opts: {
+    router: TRouter;
+    store: TStore;
 }) => void;
 export declare function getExcludeState(): string[];

@@ -8,6 +8,9 @@ Vue 提供的 KeepAlive 组件存在一些使用场景上的问题，例如：A 
 
 由此衍生出我们需要做对应的处理来达到后退时清楚对应历史页面的缓存处理。
 
+PS：现阶段考虑到实际的场景中极少数存在多个app实例多个router实例个多个store实例，
+对于多个的解决方案多数都为多iframe进行处理多个frame间的router都是独立的，暂时不考虑多实例匹配，当前为单例模式；
+
 ## 依赖：
 
 ```cmd
@@ -16,7 +19,7 @@ npm i blue-retreat -S
 
 ## 使用说明
 
-## initBlueRetreat 方法
+## defineBlueRetreat 方法：原initBlueRetreat更名为defineBlueRetreat，请悉知.
 
 ### Options
 
@@ -38,7 +41,7 @@ Vuex 实例 或者 Pinia的store
 
 ```javascript
 // 在注册路由前使用模块
-import {initBlueRetreat} from 'blue-retreat';
+import {defineBlueRetreat} from 'blue-retreat';
 import Router from 'vue-router';
 import Vuex from 'vuex';
 
@@ -52,17 +55,17 @@ const router = new Router({
 });
 const store = new Vuex();
 
-//初始化retreat
-initBlueRetreat({
+//定义retreat
+defineBlueRetreat({
   router,
   store
 });
 
 ```
 
-对于使用pinia
+对于使用Pinia
 ```javascript
-import {initBlueRetreat} from 'blue-retreat';
+import {defineBlueRetreat} from 'blue-retreat';
 import {createApp} from 'vue';
 import Router from 'vue-router';
 import {createPinia,defineStore} from 'pinia';
@@ -82,8 +85,8 @@ const router = new Router({
   }]
 });
 
-//初始化retreat 使用pinia需要在createPinia后再调用initBlueRetreat
-initBlueRetreat({
+//初始化retreat defineBlueRetreat
+defineBlueRetreat({
   router,
   //如果使用的为pinia，这里只需传入defineStore即可，内部会进行相关的store创建
   store: defineStore

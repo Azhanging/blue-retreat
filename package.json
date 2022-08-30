@@ -1,6 +1,6 @@
 {
   "name": "blue-retreat",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "vue keep-alive popstate manage",
   "main": "./index.js",
   "types": "./types/index.d.ts",
@@ -8,9 +8,10 @@
     "dev": "webpack-dev-server --config blue-build-library/dev.js",
     "build": "node  blue-build-library/build.js"
   },
-  "keyword": [
+  "keywords": [
     "vue keep-alive helper",
-    "vue program popstate manage"
+    "vue program popstate manage",
+    "vue3 and pinia program popstate manage"
   ],
   "author": "Blue",
   "license": "ISC",
