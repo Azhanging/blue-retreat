@@ -10,7 +10,7 @@ import type {
   TRouterHookOptions,
 } from "./types";
 import { getCurrentRetreatData } from "./retreat-data";
-import { unref, getStateKey } from "./utils";
+import { unref, getStateKey, getRouterName } from "./utils";
 import { SET_KEEP_ALIVE_EXCLUDE, STORE_MODULE_NAME } from "./const";
 import * as storeModule from "./store";
 export * from "./retreat-data";
@@ -132,8 +132,7 @@ popStateEvent();
 //进入路由前处理
 function beforePushHistory(opts: TRouterHookOptions) {
   const { to, next } = opts;
-  const { meta } = to;
-  const { name }: { name: string } = meta;
+  const name: string = getRouterName(to);
   //如果当前是通过popstate触发的，不进行缓存的处理
   if (name === currentPopStateName) return next();
   currentPopStateName = null;
@@ -188,8 +187,7 @@ function pushHistory(): void {
   const currentRouterHistory = queryHistoryByKey({ key });
   if (currentRouterHistory) return;
   const { currentRoute } = router;
-  const { meta } = unref(currentRoute);
-  const { name }: { name: string } = meta;
+  const name: string = getRouterName(unref(currentRoute));
   if (!name) return;
   //写入历史
   routerHistory.push({
