@@ -16,7 +16,14 @@ export function getStateKey(state: THistoryState): TStateKey {
 }
 
 //获取路由name
-export function getRouterName(to: TRouterTo): string {
+export function getRouteName(to: TRouterTo): string {
   const { meta } = to;
   return to.name || meta.name;
+}
+
+//获取路由匹配名
+export function getRouteMatchedNames(to: TRouterTo): string[] {
+  return to.matched.map(
+    (route: any) => route.name || (route.meta && route.meta.name) || ``
+  );
 }

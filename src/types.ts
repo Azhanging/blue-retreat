@@ -1,12 +1,17 @@
 //state key
 export type TStateKey = string | number;
 
+//路由匹配到的名字组，父子路由链路
+export type TRouteNames = string[];
+
 //历史类型
 export interface TRouterHistory {
   //state.key
   key: TStateKey;
   //组件的name
   name: string;
+  //路由链路name
+  matchedNames: TRouteNames;
 }
 
 //路由类型
