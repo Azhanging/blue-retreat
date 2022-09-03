@@ -20,14 +20,13 @@ import {
 import { SET_KEEP_ALIVE_EXCLUDE, STORE_MODULE_NAME } from "./const";
 import * as storeModule from "./store";
 export * from "./retreat-data";
+/* 
+  一层 || 多层 实际占用一条历史记录
+  路由进入时，先会排除原有记录上的所有
+*/
 
-//条件符号
-export enum ConditionEnum {
-  //等于
-  EQ = `EQ`,
-  //大于
-  GT = `GT`,
-}
+//下一跳的延迟处理
+const TICKET_TIME = 50;
 
 //路由的历史记录
 let routerHistory: TRouterHistory[] = [];
@@ -66,7 +65,7 @@ export const defineBlueRetreat = (() => {
 function setRouterHooks() {
   //路由进前处理
   router.beforeEach((to: TRouterTo, from: TRouterFrom, next: TRouterNext) => {
-    beforePushHistory({
+    beforeRouterHook({
       to,
       from,
       next,
@@ -76,43 +75,9 @@ function setRouterHooks() {
   router.afterEach(() => {
     setTimeout(() => {
       //写入history
-      pushHistory();
-    });
+      afterRouterHook();
+    }, TICKET_TIME);
   });
-}
-
-//删除exclude中的指定name
-function removeRouteNameInExclude(exclude: TRouteNames, name: string) {
-  //获取store中的exclude state
-  const index = exclude.indexOf(name);
-  if (index !== -1) {
-    exclude.splice(index, 1);
-  }
-}
-
-//过滤分自身的路由name
-function filterSelfMatchedRouteNames(opts: {
-  matchedNames: TRouteNames;
-  name: string;
-  condition?: ConditionEnum[];
-}): TRouteNames {
-  const { matchedNames, name, condition = [ConditionEnum.EQ] } = opts;
-  const routeNames: TRouteNames = [];
-  matchedNames.forEach((routeName) => {
-    if (routeName === name) return;
-    const findHistory = queryHistoryByName({
-      name: routeName,
-    });
-    if (
-      //等于处理
-      (condition.includes(ConditionEnum.EQ) && findHistory.length === 0) ||
-      //大于处理
-      (condition.includes(ConditionEnum.GT) && findHistory.length > 0)
-    ) {
-      routeNames.push(routeName);
-    }
-  });
-  return routeNames;
 }
 
 //注册处理popState事件处理
@@ -143,114 +108,97 @@ function popStateEvent() {
       ? (currentRouterHistory as TRouterHistory).name
       : null;
 
-    //如果是那种回环访问，当前的页面是后退回来产生的新页面
     //这种在routerHistory是不存在的，这里需要移除最后一个路由缓存
+    //由于一级多层级的都只存在一条历史记录，这里后退的过程中找不到对于之前层级的记录了，
+    //这里将最后一条记录当作当作前记录来处理
     if (currentRouterHistory === null && routerHistory.length > 0) {
       nextRouterHistory = routerHistory[routerHistory.length - 1];
     }
 
     //如果当前页的下一个页面（后退回来的页面）在history中有记录，这里清空缓存
     if (nextRouterHistory) {
-      const { name, key, matchedNames } = nextRouterHistory as TRouterHistory;
-      //排除父级相关的路由名,
-      //例：A->AA->BB->AA 处理 BB的父级节点
-      const excludeParentRouteNames: TRouteNames = filterSelfMatchedRouteNames({
-        matchedNames,
-        name,
-      });
+      const { name, key } = nextRouterHistory as TRouterHistory;
       //获取store中的exclude state
       const exclude = getExcludeState();
-      //如果已排除，不处理
-      if (exclude.includes(name)) return;
       //写入到排除记录
       exclude.push(name);
-      //排除父级节点路由
-      exclude.push(...excludeParentRouteNames);
       //设置store
-      setKeepAliveExclude(exclude);
+      setExcludeState(exclude);
       //下一宏任务处理
       setTimeout(() => {
-        const exclude = getExcludeState();
-        removeRouteNameInExclude(exclude, name);
-        //删除上一跳相关的父级路由排除规则
-        while (excludeParentRouteNames.length) {
-          removeRouteNameInExclude(
-            exclude,
-            excludeParentRouteNames.shift() as string
-          );
-        }
         //设置store
-        setKeepAliveExclude(exclude);
-        //再历史中的index
-        const historyIndex = queryHistoryByKey({
-          key,
-          findIndex: true,
-        });
-        //这里删除排序
-        if (historyIndex !== -1) {
-          routerHistory.splice(historyIndex as number, 1);
-        }
-      }, 50);
+        setExcludeState([]);
+        //通过key删除历史记录
+        removeHistoryByKey(key);
+      }, TICKET_TIME);
     }
   };
+  //注册内置popstate事件，监听后腿时的处理
   window.addEventListener(`popstate`, popStateHandler);
 }
 
 //注册popstate事件处理
 popStateEvent();
 
+//再历史中查找name相关的的name，记录到最长的链路
+function filterMatchedRouteNamesInHistory(name: string): TRouteNames {
+  const historyRouteName: TRouteNames = [];
+  routerHistory.forEach((history: TRouterHistory) => {
+    const { matchedNames } = history;
+    if (matchedNames.includes(name)) {
+      matchedNames.forEach((routeName) => {
+        if (historyRouteName.includes(routeName)) return;
+        historyRouteName.push(routeName);
+      });
+    }
+  });
+  return historyRouteName;
+}
+
 //进入路由前处理
 //这里多为处理回环路由的状态
-function beforePushHistory(opts: TRouterHookOptions) {
+function beforeRouterHook(opts: TRouterHookOptions): void {
   const { to, next } = opts;
   //获取来源路由的名称
   const name: string = getRouteName(to);
   //如果当前是通过popstate触发的，不进行缓存的处理
-  if (name === currentPopStateName) return next();
+  if (name === currentPopStateName) {
+    currentPopStateName = null;
+    return next();
+  }
   currentPopStateName = null;
-  //找一下之前历史是否存在相同的缓存（回环访问的那种情况）
-  const findHistory: TRouterHistory[] = queryHistoryByName({ name });
-
-  //todo 先多层级 - 再少层级访问，这里会存在缓存
-  //如果之前存在缓存了，先杀掉之前的缓存
-  if (findHistory.length === 0) return next();
-
+  //匹配的路由链路名
+  let matchedRouteNames: TRouteNames = (() => {
+    //访问的路由链路
+    const matchedRouteNames = getRouteMatchedNames(to);
+    //从历史记录中查找当前name的是否存在的多级的路由链路，
+    //如果存在多级链路，比访问的链路更大，这里将会排除最大的访问链路
+    //这里的处理将会尝试一级路由和多级路由只会占用一条历史记录
+    const historyMatchedRouteNames = filterMatchedRouteNamesInHistory(name);
+    if (historyMatchedRouteNames.length > matchedRouteNames.length) {
+      return historyMatchedRouteNames;
+    }
+    return matchedRouteNames;
+  })();
   //获取store中的exclude state
   const exclude = getExcludeState();
-  if (!exclude.includes(name)) {
-    //写入排除缓存name
-    exclude.push(name);
+  //排除链路上name
+  exclude.push(...matchedRouteNames);
+  //设置store
+  setExcludeState(exclude);
+  //下一跳移除对应的规则
+  setTimeout(() => {
     //设置store
-    setKeepAliveExclude(exclude);
-    //下一跳移除对应的规则
-    setTimeout(() => {
-      //获取store中的exclude state
-      removeRouteNameInExclude(exclude, name);
-      //设置store
-      setKeepAliveExclude(exclude);
-      //删除历史记录
-      removeHistoryByName({ name });
-      //完成处理
-      next();
-    });
-  } else {
+    setExcludeState([]);
+    //删除排除路由名
+    removeHistoryByName(matchedRouteNames);
     //完成处理
     next();
-  }
-}
-
-//设置store
-function setKeepAliveExclude(exclude: TRouteNames) {
-  const _exclude = Object.assign([], exclude);
-  if (storeModule.isPinia) {
-    store.exclude = _exclude;
-  } else if (storeModule.isVuex) {
-    store.commit(SET_KEEP_ALIVE_EXCLUDE, _exclude);
-  }
+  }, TICKET_TIME);
 }
 
 //路由访问的时候，加入对应的key处理
-function pushHistory(): void {
+function afterRouterHook(): void {
   const state: THistoryState = history.state;
   //使用定位信息处理
   const key: TStateKey = getStateKey(state);
@@ -274,9 +222,18 @@ function pushHistory(): void {
   });
 }
 
+//设置store
+function setExcludeState(exclude: TRouteNames) {
+  const _exclude = Object.assign([], exclude);
+  if (storeModule.isPinia) {
+    store.exclude = _exclude;
+  } else if (storeModule.isVuex) {
+    store.commit(SET_KEEP_ALIVE_EXCLUDE, _exclude);
+  }
+}
+
 //删除历史记录
-function removeHistoryByName(opts: { name: string | string[] }) {
-  const { name } = opts;
+function removeHistoryByName(name: string | string[]) {
   function handler(name: string) {
     const findHistory: TRouterHistory[] = queryHistoryByName({
       name,
@@ -294,6 +251,19 @@ function removeHistoryByName(opts: { name: string | string[] }) {
     name.forEach((routeName) => {
       handler(routeName);
     });
+  }
+}
+
+//通过key删除历史记录
+function removeHistoryByKey(key: TStateKey) {
+  //再历史中的index
+  const historyIndex = queryHistoryByKey({
+    key,
+    findIndex: true,
+  });
+  //这里删除排序
+  if (historyIndex !== -1) {
+    routerHistory.splice(historyIndex as number, 1);
   }
 }
 
@@ -315,7 +285,7 @@ function queryHistoryByKey(
       type === `next` &&
       nextRouterHistory
     ) {
-      if (findIndex) return index;
+      if (findIndex) return index + 1;
       return nextRouterHistory;
     } else if (currentRouterHistory.key === key && type === `current`) {
       if (findIndex) return index;

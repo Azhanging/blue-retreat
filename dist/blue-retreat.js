@@ -1,10 +1,10 @@
 /*!
  * 
- * blue-retreat.js 1.0.4
+ * blue-retreat.js 1.0.5
  * (c) 2016-2022 Blue
  * Released under the MIT License.
  * https://github.com/azhanging/blue-retreat
- * time:Tue, 30 Aug 2022 16:01:18 GMT
+ * time:Sat, 03 Sep 2022 11:37:12 GMT
  * 
  */
 (function webpackUniversalModuleDefinition(root, factory) {
@@ -128,6 +128,12 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
+/*
+  一层 || 多层 实际占用一条历史记录
+  路由进入时，先会排除原有记录上的所有
+*/
+//下一跳的延迟处理
+var TICKET_TIME = 50;
 //路由的历史记录
 var routerHistory = [];
 //当前的popState的name值
@@ -160,7 +166,7 @@ var defineBlueRetreat = (function () {
 function setRouterHooks() {
     //路由进前处理
     router.beforeEach(function (to, from, next) {
-        beforePushHistory({
+        beforeRouterHook({
             to: to,
             from: from,
             next: next,
@@ -170,8 +176,8 @@ function setRouterHooks() {
     router.afterEach(function () {
         setTimeout(function () {
             //写入history
-            pushHistory();
-        });
+            afterRouterHook();
+        }, TICKET_TIME);
     });
 }
 //注册处理popState事件处理
@@ -181,22 +187,26 @@ function popStateEvent() {
         if (!event.state) {
             event.state = {};
         }
+        //后退写入数据
         event.state.retreatData = Object(_retreat_data__WEBPACK_IMPORTED_MODULE_0__["getCurrentRetreatData"])();
         var state = event.state;
         var key = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getStateKey"])(state);
+        //通过key查询当前的路由记录
+        var currentRouterHistory = queryHistoryByKey({
+            key: key,
+        });
+        //查找当前记录的下一个路由,后退前的路由记录
         var nextRouterHistory = queryHistoryByKey({
             key: key,
             type: "next",
-        });
-        var currentRouterHistory = queryHistoryByKey({
-            key: key,
         });
         //记录popstate的name,这里可能是被销毁过的history
         currentPopStateName = currentRouterHistory
             ? currentRouterHistory.name
             : null;
-        //如果是那种回环访问，当前的页面是后退回来产生的新页面
         //这种在routerHistory是不存在的，这里需要移除最后一个路由缓存
+        //由于一级多层级的都只存在一条历史记录，这里后退的过程中找不到对于之前层级的记录了，
+        //这里将最后一条记录当作当作前记录来处理
         if (currentRouterHistory === null && routerHistory.length > 0) {
             nextRouterHistory = routerHistory[routerHistory.length - 1];
         }
@@ -205,90 +215,82 @@ function popStateEvent() {
             var _a = nextRouterHistory, name_1 = _a.name, key_1 = _a.key;
             //获取store中的exclude state
             var exclude = getExcludeState();
-            if (exclude.includes(name_1))
-                return;
+            //写入到排除记录
             exclude.push(name_1);
             //设置store
-            setKeepAliveExclude(exclude);
+            setExcludeState(exclude);
             //下一宏任务处理
             setTimeout(function () {
-                var exclude = getExcludeState();
-                var index = exclude.indexOf(name_1);
-                if (index !== -1) {
-                    exclude.splice(index, 1);
-                }
                 //设置store
-                setKeepAliveExclude(exclude);
-                //再历史中的index
-                var historyIndex = queryHistoryByKey({
-                    key: key_1,
-                    findIndex: true,
-                });
-                //这里删除排序
-                if (historyIndex !== -1) {
-                    routerHistory.splice(historyIndex, 1);
-                }
-            }, 50);
+                setExcludeState([]);
+                //通过key删除历史记录
+                removeHistoryByKey(key_1);
+            }, TICKET_TIME);
         }
     };
+    //注册内置popstate事件，监听后腿时的处理
     window.addEventListener("popstate", popStateHandler);
 }
 //注册popstate事件处理
 popStateEvent();
+//再历史中查找name相关的的name，记录到最长的链路
+function filterMatchedRouteNamesInHistory(name) {
+    var historyRouteName = [];
+    routerHistory.forEach(function (history) {
+        var matchedNames = history.matchedNames;
+        if (matchedNames.includes(name)) {
+            matchedNames.forEach(function (routeName) {
+                if (historyRouteName.includes(routeName))
+                    return;
+                historyRouteName.push(routeName);
+            });
+        }
+    });
+    return historyRouteName;
+}
 //进入路由前处理
-function beforePushHistory(opts) {
+//这里多为处理回环路由的状态
+function beforeRouterHook(opts) {
     var to = opts.to, next = opts.next;
-    var meta = to.meta;
-    var name = meta.name;
+    //获取来源路由的名称
+    var name = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getRouteName"])(to);
     //如果当前是通过popstate触发的，不进行缓存的处理
-    if (name === currentPopStateName)
+    if (name === currentPopStateName) {
+        currentPopStateName = null;
         return next();
+    }
     currentPopStateName = null;
-    //找一下之前历史是否存在相同的缓存（回环访问的那种情况）
-    var findHistory = queryHistoryByName({ name: name });
-    //如果之前存在缓存了，先杀掉之前的缓存
-    if (findHistory.length === 0)
-        return next();
+    //匹配的路由链路名
+    var matchedRouteNames = (function () {
+        //访问的路由链路
+        var matchedRouteNames = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getRouteMatchedNames"])(to);
+        //从历史记录中查找当前name的是否存在的多级的路由链路，
+        //如果存在多级链路，比访问的链路更大，这里将会排除最大的访问链路
+        //这里的处理将会尝试一级路由和多级路由只会占用一条历史记录
+        var historyMatchedRouteNames = filterMatchedRouteNamesInHistory(name);
+        if (historyMatchedRouteNames.length > matchedRouteNames.length) {
+            return historyMatchedRouteNames;
+        }
+        return matchedRouteNames;
+    })();
     //获取store中的exclude state
     var exclude = getExcludeState();
-    if (!exclude.includes(name)) {
-        //写入排除缓存name
-        exclude.push(name);
+    //排除链路上name
+    exclude.push.apply(exclude, matchedRouteNames);
+    //设置store
+    setExcludeState(exclude);
+    //下一跳移除对应的规则
+    setTimeout(function () {
         //设置store
-        setKeepAliveExclude(exclude);
-        //下一跳移除对应的规则
-        setTimeout(function () {
-            //获取store中的exclude state
-            var exclude = getExcludeState();
-            var index = exclude.indexOf(name);
-            if (index !== -1) {
-                exclude.splice(index, 1);
-            }
-            //设置store
-            setKeepAliveExclude(exclude);
-            //删除历史记录
-            removeHistoryByName({ name: name });
-            //完成处理
-            next();
-        });
-    }
-    else {
+        setExcludeState([]);
+        //删除排除路由名
+        removeHistoryByName(matchedRouteNames);
         //完成处理
         next();
-    }
-}
-//设置store
-function setKeepAliveExclude(exclude) {
-    var _exclude = Object.assign([], exclude);
-    if (_store__WEBPACK_IMPORTED_MODULE_3__["isPinia"]) {
-        store.exclude = _exclude;
-    }
-    else if (_store__WEBPACK_IMPORTED_MODULE_3__["isVuex"]) {
-        store.commit(_const__WEBPACK_IMPORTED_MODULE_2__["SET_KEEP_ALIVE_EXCLUDE"], _exclude);
-    }
+    }, TICKET_TIME);
 }
 //路由访问的时候，加入对应的key处理
-function pushHistory() {
+function afterRouterHook() {
     var state = history.state;
     //使用定位信息处理
     var key = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getStateKey"])(state);
@@ -297,9 +299,11 @@ function pushHistory() {
     var currentRouterHistory = queryHistoryByKey({ key: key });
     if (currentRouterHistory)
         return;
-    var currentRoute = router.currentRoute;
-    var meta = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["unref"])(currentRoute).meta;
-    var name = meta.name;
+    var currentRoute = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["unref"])(router.currentRoute);
+    //当前路由name
+    var name = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getRouteName"])(currentRoute);
+    //路由链路name
+    var routeMatchedNames = Object(_utils__WEBPACK_IMPORTED_MODULE_1__["getRouteMatchedNames"])(currentRoute);
     if (!name)
         return;
     //写入历史
@@ -308,18 +312,52 @@ function pushHistory() {
         key: key,
         //组件的name
         name: name,
+        //匹配的路由链路名
+        matchedNames: routeMatchedNames,
     });
 }
+//设置store
+function setExcludeState(exclude) {
+    var _exclude = Object.assign([], exclude);
+    if (_store__WEBPACK_IMPORTED_MODULE_3__["isPinia"]) {
+        store.exclude = _exclude;
+    }
+    else if (_store__WEBPACK_IMPORTED_MODULE_3__["isVuex"]) {
+        store.commit(_const__WEBPACK_IMPORTED_MODULE_2__["SET_KEEP_ALIVE_EXCLUDE"], _exclude);
+    }
+}
 //删除历史记录
-function removeHistoryByName(opts) {
-    var name = opts.name;
-    var findHistory = queryHistoryByName({
-        name: name,
+function removeHistoryByName(name) {
+    function handler(name) {
+        var findHistory = queryHistoryByName({
+            name: name,
+        });
+        while (findHistory.length) {
+            var lastIndex = findHistory.length - 1;
+            var index = routerHistory.indexOf(findHistory[lastIndex]);
+            routerHistory.splice(index, 1);
+            findHistory.pop();
+        }
+    }
+    if (typeof name === "string") {
+        handler(name);
+    }
+    else if (name instanceof Array) {
+        name.forEach(function (routeName) {
+            handler(routeName);
+        });
+    }
+}
+//通过key删除历史记录
+function removeHistoryByKey(key) {
+    //再历史中的index
+    var historyIndex = queryHistoryByKey({
+        key: key,
+        findIndex: true,
     });
-    while (findHistory.length) {
-        var index = routerHistory.indexOf(findHistory[findHistory.length - 1]);
-        routerHistory.splice(index, 1);
-        findHistory.pop();
+    //这里删除排序
+    if (historyIndex !== -1) {
+        routerHistory.splice(historyIndex, 1);
     }
 }
 //通过key查询历史,
@@ -334,7 +372,7 @@ function queryHistoryByKey(opts) {
             type === "next" &&
             nextRouterHistory) {
             if (findIndex)
-                return index;
+                return index + 1;
             return nextRouterHistory;
         }
         else if (currentRouterHistory.key === key && type === "current") {
@@ -426,6 +464,8 @@ function getRetreatData(opts) {
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "unref", function() { return unref; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getStateKey", function() { return getStateKey; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getRouteName", function() { return getRouteName; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "getRouteMatchedNames", function() { return getRouteMatchedNames; });
 //针对vue3 ref处理
 function isRef(ref) {
     return ref.__v_isRef;
@@ -437,6 +477,15 @@ function unref(ref) {
 //获取状态
 function getStateKey(state) {
     return state.key || state.position || "";
+}
+//获取路由name
+function getRouteName(to) {
+    var _a = to.meta, meta = _a === void 0 ? {} : _a;
+    return meta.name || to.name || "";
+}
+//获取路由匹配名
+function getRouteMatchedNames(to) {
+    return to.matched.map(function (route) { return route.name || (route.meta && route.meta.name) || ""; });
 }
 
 

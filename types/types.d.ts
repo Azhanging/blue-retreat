@@ -1,7 +1,9 @@
 export declare type TStateKey = string | number;
+export declare type TRouteNames = string[];
 export interface TRouterHistory {
     key: TStateKey;
     name: string;
+    matchedNames: TRouteNames;
 }
 export declare type TRouter = any;
 export declare type TStore = any;

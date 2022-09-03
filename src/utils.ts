@@ -17,8 +17,8 @@ export function getStateKey(state: THistoryState): TStateKey {
 
 //获取路由name
 export function getRouteName(to: TRouterTo): string {
-  const { meta } = to;
-  return to.name || meta.name;
+  const { meta = {} } = to;
+  return meta.name || to.name || ``;
 }
 
 //获取路由匹配名
