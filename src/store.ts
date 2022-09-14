@@ -47,7 +47,7 @@ function vuexStore(store: TStore): TStore {
     },
     mutations: {
       [SET_KEEP_ALIVE_EXCLUDE](state, exclude) {
-        state[STORE_MODULE_NAME] = exclude;
+        state.exclude = exclude;
       },
     },
   });

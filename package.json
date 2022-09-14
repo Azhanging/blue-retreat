@@ -1,6 +1,6 @@
 {
   "name": "blue-retreat",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "vue keep-alive popstate manage",
   "main": "./index.js",
   "types": "./types/index.d.ts",

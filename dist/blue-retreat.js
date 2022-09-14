@@ -1,10 +1,10 @@
 /*!
  * 
- * blue-retreat.js 1.0.5
+ * blue-retreat.js 1.0.6
  * (c) 2016-2022 Blue
  * Released under the MIT License.
  * https://github.com/azhanging/blue-retreat
- * time:Sat, 03 Sep 2022 11:37:12 GMT
+ * time:Wed, 14 Sep 2022 16:23:54 GMT
  * 
  */
 (function webpackUniversalModuleDefinition(root, factory) {
@@ -560,7 +560,7 @@ function vuexStore(store) {
         },
         mutations: (_a = {},
             _a[_const__WEBPACK_IMPORTED_MODULE_0__["SET_KEEP_ALIVE_EXCLUDE"]] = function (state, exclude) {
-                state[_const__WEBPACK_IMPORTED_MODULE_0__["STORE_MODULE_NAME"]] = exclude;
+                state.exclude = exclude;
             },
             _a),
     });
